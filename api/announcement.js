@@ -1,7 +1,7 @@
 let announcements = [];
 
-// Giới hạn số lượng announcements lưu trữ (tránh tràn bộ nhớ)
-const MAX_ANNOUNCEMENTS = 100;
+// Thời gian tồn tại tối đa của announcement (ms)
+const ANNOUNCEMENT_LIFETIME = 5000; // 5 giây
 
 export default async function handler(req, res) {
   try {
@@ -11,7 +11,6 @@ export default async function handler(req, res) {
       
       let result = announcements;
       
-      // Lọc theo thời gian (lấy các announcement sau một ID nhất định)
       if (since) {
         const sinceIndex = announcements.findIndex(a => a.id === since);
         if (sinceIndex !== -1) {
@@ -19,10 +18,9 @@ export default async function handler(req, res) {
         }
       }
       
-      // Giới hạn số lượng trả về
       if (limit) {
         const limitNum = parseInt(limit);
-        result = result.slice(-limitNum); // Lấy N announcement mới nhất
+        result = result.slice(-limitNum);
       }
       
       return res.status(200).json({
@@ -37,7 +35,6 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const { title, content, priority } = req.body;
 
-      // Validation
       if (!title || !content) {
         return res.status(400).json({ 
           success: false,
@@ -45,33 +42,27 @@ export default async function handler(req, res) {
         });
       }
 
-      // Tạo announcement mới
       const newAnnouncement = { 
         id: Date.now().toString(),
         title: title.trim(),
         content: content.trim(),
-        priority: priority || "normal", // low, normal, high, urgent
+        priority: priority || "normal",
         createdAt: new Date().toISOString(),
-        readBy: [] // Theo dõi ai đã đọc (optional)
+        readBy: []
       };
 
       announcements.push(newAnnouncement);
 
-      // Giới hạn số lượng (xóa announcement cũ nhất nếu vượt quá)
-      if (announcements.length > MAX_ANNOUNCEMENTS) {
-        announcements.shift();
-      }
+      // Tự động xóa sau 5 giây
+      setTimeout(() => {
+        const index = announcements.findIndex(a => a.id === newAnnouncement.id);
+        if (index !== -1) {
+          announcements.splice(index, 1);
+          console.log("🗑️ Announcement expired:", newAnnouncement.id);
+        }
+      }, ANNOUNCEMENT_LIFETIME);
 
-      // Log server
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log("📢 NEW ANNOUNCEMENT");
-      console.log("ID:", newAnnouncement.id);
-      console.log("Title:", newAnnouncement.title);
-      console.log("Content:", newAnnouncement.content);
-      console.log("Priority:", newAnnouncement.priority);
-      console.log("Time:", newAnnouncement.createdAt);
-      console.log("Total announcements:", announcements.length);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("📢 NEW ANNOUNCEMENT:", newAnnouncement.id, newAnnouncement.title);
 
       return res.status(201).json({
         success: true,
@@ -80,28 +71,16 @@ export default async function handler(req, res) {
       });
     }
 
-    // ========== DELETE: Xóa announcement (theo ID) ==========
+    // ========== DELETE: Xóa announcement ==========
     if (req.method === "DELETE") {
       const { id } = req.query;
       
-      if (!id) {
-        return res.status(400).json({ 
-          success: false,
-          error: "Thiếu ID" 
-        });
-      }
+      if (!id) return res.status(400).json({ success: false, error: "Thiếu ID" });
 
       const index = announcements.findIndex(a => a.id === id);
-      
-      if (index === -1) {
-        return res.status(404).json({ 
-          success: false,
-          error: "Không tìm thấy announcement" 
-        });
-      }
+      if (index === -1) return res.status(404).json({ success: false, error: "Không tìm thấy announcement" });
 
       const deleted = announcements.splice(index, 1)[0];
-      
       console.log("🗑️ Deleted announcement:", deleted.id);
 
       return res.status(200).json({
@@ -115,21 +94,10 @@ export default async function handler(req, res) {
     if (req.method === "PATCH") {
       const { id, userId } = req.body;
       
-      if (!id || !userId) {
-        return res.status(400).json({ 
-          success: false,
-          error: "Thiếu ID hoặc userID" 
-        });
-      }
+      if (!id || !userId) return res.status(400).json({ success: false, error: "Thiếu ID hoặc userID" });
 
       const announcement = announcements.find(a => a.id === id);
-      
-      if (!announcement) {
-        return res.status(404).json({ 
-          success: false,
-          error: "Không tìm thấy announcement" 
-        });
-      }
+      if (!announcement) return res.status(404).json({ success: false, error: "Không tìm thấy announcement" });
 
       if (!announcement.readBy.includes(userId)) {
         announcement.readBy.push(userId);
@@ -142,7 +110,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // ========== Method không được hỗ trợ ==========
     return res.status(405).json({ 
       success: false,
       error: "Method không được hỗ trợ",
@@ -151,10 +118,6 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error("❌ Server error:", e);
-    return res.status(500).json({ 
-      success: false,
-      error: "Lỗi server", 
-      details: e.message 
-    });
+    return res.status(500).json({ success: false, error: "Lỗi server", details: e.message });
   }
 }
