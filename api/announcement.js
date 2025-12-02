@@ -1,45 +1,160 @@
-// Lưu tạm các announcement trong bộ nhớ server
 let announcements = [];
+
+// Giới hạn số lượng announcements lưu trữ (tránh tràn bộ nhớ)
+const MAX_ANNOUNCEMENTS = 100;
 
 export default async function handler(req, res) {
   try {
-    // --- GET: trả về danh sách announcement ---
+    // ========== GET: Lấy danh sách announcement ==========
     if (req.method === "GET") {
-      return res.status(200).json(announcements);
+      const { limit, since } = req.query;
+      
+      let result = announcements;
+      
+      // Lọc theo thời gian (lấy các announcement sau một ID nhất định)
+      if (since) {
+        const sinceIndex = announcements.findIndex(a => a.id === since);
+        if (sinceIndex !== -1) {
+          result = announcements.slice(sinceIndex + 1);
+        }
+      }
+      
+      // Giới hạn số lượng trả về
+      if (limit) {
+        const limitNum = parseInt(limit);
+        result = result.slice(-limitNum); // Lấy N announcement mới nhất
+      }
+      
+      return res.status(200).json({
+        success: true,
+        count: result.length,
+        total: announcements.length,
+        data: result
+      });
     }
 
-    // --- POST: thêm announcement mới ---
+    // ========== POST: Thêm announcement mới ==========
     if (req.method === "POST") {
-      const { title, content } = req.body;
+      const { title, content, priority } = req.body;
 
+      // Validation
       if (!title || !content) {
-        return res.status(400).json({ error: "Thiếu title hoặc content" });
+        return res.status(400).json({ 
+          success: false,
+          error: "Thiếu title hoặc content" 
+        });
       }
 
+      // Tạo announcement mới
       const newAnnouncement = { 
-        id: Date.now().toString(), 
-        title, 
-        content, 
-        createdAt: new Date().toISOString() 
+        id: Date.now().toString(),
+        title: title.trim(),
+        content: content.trim(),
+        priority: priority || "normal", // low, normal, high, urgent
+        createdAt: new Date().toISOString(),
+        readBy: [] // Theo dõi ai đã đọc (optional)
       };
 
       announcements.push(newAnnouncement);
 
-      console.log("=== NEW ANNOUNCEMENT ===");
-      console.log("Title:", title);
-      console.log("Content:", content);
+      // Giới hạn số lượng (xóa announcement cũ nhất nếu vượt quá)
+      if (announcements.length > MAX_ANNOUNCEMENTS) {
+        announcements.shift();
+      }
+
+      // Log server
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("📢 NEW ANNOUNCEMENT");
+      console.log("ID:", newAnnouncement.id);
+      console.log("Title:", newAnnouncement.title);
+      console.log("Content:", newAnnouncement.content);
+      console.log("Priority:", newAnnouncement.priority);
+      console.log("Time:", newAnnouncement.createdAt);
+      console.log("Total announcements:", announcements.length);
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
       return res.status(201).json({
+        success: true,
         message: "Announcement đã gửi!",
-        announcement: newAnnouncement
+        data: newAnnouncement
       });
     }
 
-    // --- Các method khác không được hỗ trợ ---
-    return res.status(405).json({ error: "Method không được hỗ trợ" });
+    // ========== DELETE: Xóa announcement (theo ID) ==========
+    if (req.method === "DELETE") {
+      const { id } = req.query;
+      
+      if (!id) {
+        return res.status(400).json({ 
+          success: false,
+          error: "Thiếu ID" 
+        });
+      }
+
+      const index = announcements.findIndex(a => a.id === id);
+      
+      if (index === -1) {
+        return res.status(404).json({ 
+          success: false,
+          error: "Không tìm thấy announcement" 
+        });
+      }
+
+      const deleted = announcements.splice(index, 1)[0];
+      
+      console.log("🗑️ Deleted announcement:", deleted.id);
+
+      return res.status(200).json({
+        success: true,
+        message: "Đã xóa announcement",
+        data: deleted
+      });
+    }
+
+    // ========== PATCH: Đánh dấu đã đọc ==========
+    if (req.method === "PATCH") {
+      const { id, userId } = req.body;
+      
+      if (!id || !userId) {
+        return res.status(400).json({ 
+          success: false,
+          error: "Thiếu ID hoặc userID" 
+        });
+      }
+
+      const announcement = announcements.find(a => a.id === id);
+      
+      if (!announcement) {
+        return res.status(404).json({ 
+          success: false,
+          error: "Không tìm thấy announcement" 
+        });
+      }
+
+      if (!announcement.readBy.includes(userId)) {
+        announcement.readBy.push(userId);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Đã đánh dấu đã đọc",
+        data: announcement
+      });
+    }
+
+    // ========== Method không được hỗ trợ ==========
+    return res.status(405).json({ 
+      success: false,
+      error: "Method không được hỗ trợ",
+      allowedMethods: ["GET", "POST", "DELETE", "PATCH"]
+    });
 
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "Lỗi server", details: e.message });
+    console.error("❌ Server error:", e);
+    return res.status(500).json({ 
+      success: false,
+      error: "Lỗi server", 
+      details: e.message 
+    });
   }
 }
