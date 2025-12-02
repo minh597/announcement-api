@@ -1,0 +1,12 @@
+{
+  "name": "announcement-api",
+  "version": "1.0.0",
+  "description": "Serverless announcement API for Vercel",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "vercel dev",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {}
+}
